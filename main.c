@@ -51,7 +51,13 @@ int main(){
 		args[strcspn(args, "\n")] = '\0'; // Reemplaza el primer salto de línea por ser el final de String
 		int nLineas = parsearCmd(args, parseado);
 
-		if(strcmp(args, "exit") == 0) {
+		// Comando 'exit [n]', retorna con valor n, si no se ingresa nada o algo que no es un número retorna con 0
+		if(strcmp(parseado[0], "exit") == 0) {
+			if (atoi(parseado[1]) != 0) {
+				printf("return con %d\n", atoi(parseado[1]));
+				return atoi(parseado[1]);
+			}
+			printf("return con 0\n");
 			return 0;
 		}
 	}
