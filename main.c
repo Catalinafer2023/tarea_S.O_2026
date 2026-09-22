@@ -13,7 +13,7 @@ void dirprint(){
 
 // Separa el String recibido del usuario en un array de Strings por cada palabra
 // Devuelve la cantidad de palabras que tiene el input del usuario
-int parsearCmd(char *usuario, char retorno[100][100]) {
+int parsearCmd(char *usuario, char *retorno[100]) {
 	int nPalabra = 0;
 	int nCaracter = 0;
 	int dentroPalabra = 0;
@@ -37,9 +37,26 @@ int parsearCmd(char *usuario, char retorno[100][100]) {
 	return nPalabra + 1;
 }
 
+void comandoExterno(char *parseado[]) {
+	pid_t pid = fork();
+
+	if(pid == 0) {
+		execvp(parseado[0], parseado);
+		perror("Error: comando externo falló o no es reconocido.");
+		exit(1);
+	}
+	else if (pid > 0) {
+		int status;
+		waitpid(pid, &status, 0);
+	}
+	else {
+		perror("Error: el fork no pudo completarse correctamente.");
+	}
+}
+
 int main(){
 	char args[100];				// Input completo del usuario
-	char parseado[100][100];	// Array del input por palabra
+	char *parseado[100];	// Array del input por palabra
 
 	// Bucle principal de la shell
 	while(1) {
@@ -57,5 +74,6 @@ int main(){
 			printf("return con 0\n");
 			return 0;
 		}
+		else {comandoExterno(parseado);}
 	}
 }
