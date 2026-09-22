@@ -13,28 +13,24 @@ void dirprint(){
 
 // Separa el String recibido del usuario en un array de Strings por cada palabra
 // Devuelve la cantidad de palabras que tiene el input del usuario
-int parsearCmd(char *usuario, char *retorno[100]) {
+int parsearCmd(char *usuario, char *retorno[]) {
 	int nPalabra = 0;
-	int nCaracter = 0;
 	int dentroPalabra = 0;
 	// Se recorre cada caracter del input del usuario y se añade uno a uno a cada fila del retorno
-    for(int i = 0; usuario[i] != '\0'; i++){
+    for(int i = 0; usuario[i] != '\0'; i++) {
         if (usuario[i] == ' ' || usuario[i] == '\n') {
-			if(dentroPalabra) {
-				usuario[i] = '\0';
-				retorno[nPalabra][nCaracter] = '\0';
-				nCaracter = 0; nPalabra++;
-				dentroPalabra = 0;
-			}
+			usuario[i] = '\0';
+			dentroPalabra = 0;
 		} else {
-			retorno[nPalabra][nCaracter++] = usuario[i];
+			if(!dentroPalabra) {
+				retorno[nPalabra++] = &usuario[i];
+			}
 			dentroPalabra = 1;
 		}
     }
-	retorno[nPalabra][nCaracter] = '\0';
+	retorno[nPalabra] = NULL;
 
-	// Se añade 1 para compensar por el index 0
-	return nPalabra + 1;
+	return nPalabra;
 }
 
 void comandoExterno(char *parseado[]) {
@@ -42,7 +38,7 @@ void comandoExterno(char *parseado[]) {
 
 	if(pid == 0) {
 		execvp(parseado[0], parseado);
-		perror("Error: comando externo falló o no es reconocido.");
+		perror("Error");
 		exit(1);
 	}
 	else if (pid > 0) {
@@ -50,7 +46,7 @@ void comandoExterno(char *parseado[]) {
 		waitpid(pid, &status, 0);
 	}
 	else {
-		perror("Error: el fork no pudo completarse correctamente.");
+		perror("Error");
 	}
 }
 
@@ -66,14 +62,18 @@ int main(){
 		int nLineas = parsearCmd(args, parseado);
 
 		// Comando 'exit [n]', retorna con valor n, si no se ingresa nada o algo que no es un número retorna con 0
-		if(strcmp(parseado[0], "exit") == 0) {
-			if (atoi(parseado[1]) != 0) {
-				printf("return con %d\n", atoi(parseado[1]));
-				return atoi(parseado[1]);
+		if(nLineas > 0) {
+			if(strcmp(parseado[0], "exit") == 0) {
+				if (nLineas > 1) {
+					if (atoi(parseado[1]) != 0) {
+						printf("return con %d\n", atoi(parseado[1]));
+						return atoi(parseado[1]);
+					}
+				}
+				printf("return con 0\n");
+				return 0;
 			}
-			printf("return con 0\n");
-			return 0;
+			else {comandoExterno(parseado);}
 		}
-		else {comandoExterno(parseado);}
 	}
 }
