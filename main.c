@@ -6,6 +6,7 @@
 #include <stdbool.h>
 
 // Función que imprime la dirección actual de la shell
+
 void dirprint(){
 	char cwd[1024];
 	printf("\nDIR:%s:~$ ", getcwd(cwd, sizeof(cwd))); 
@@ -53,6 +54,8 @@ void comandoExterno(char *parseado[]) {
 int main(){
 	char args[100];				// Input completo del usuario
 	char *parseado[100];	// Array del input por palabra
+	char di[100];
+	//char t[] = "$HOME";
 
 	// Bucle principal de la shell
 	while(1) {
@@ -60,6 +63,42 @@ int main(){
 		fgets(args, sizeof(args), stdin); // Lee input desde stdin y lo guarda en args
 		args[strcspn(args, "\n")] = '\0'; // Reemplaza el primer salto de línea por ser el final de String
 		int nLineas = parsearCmd(args, parseado);
+		
+
+
+		// WIP
+
+		if (nLineas > 0) {
+			if(strcmp(parseado[0], "cambdir") == 0) {
+				fgets(di, sizeof(di), stdin);
+	
+				/*
+				if(di[0] == '\n') {
+					for (int i = 0; i < 5; i++) {
+						di[i] = t[i];						
+					}
+					printf("%s\n", di);
+				} else {
+					printf("malo\n");
+				}
+					*/
+				di[strcspn(di, "\n")] = '\0';
+				chdir(".."); // pensar como funciona esto
+
+				// CUANDO ESTO FUNCIONE: añadir que si no lee un argumento, use &HOME
+				// DEBERIA VERIFICAR SI ES UN DIRECTORIO REAL??
+			}
+		}
+
+		if (nLineas > 0) {
+			if(strcmp(parseado[0], "muesdir") == 0) {
+				printf("%s\n", getcwd(di, 100));
+			}
+		}
+
+		// 	WIP
+
+
 
 		// Comando 'exit [n]', retorna con valor n, si no se ingresa nada o algo que no es un número retorna con 0
 		if(nLineas > 0) {
