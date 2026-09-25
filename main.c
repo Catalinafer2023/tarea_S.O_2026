@@ -11,6 +11,33 @@ void dirprint(){
 	printf("\nDIR:%s:~$ ", getcwd(cwd, sizeof(cwd))); 
 }
 
+void execPipe(){
+	int fd[2];
+	pipe(fd);
+}
+
+//si encuentra una instancia de "|" guarda los comandos separados en dos
+//o más strings para facilidad de interpretación 
+int pipeDetec(char *usuario, char retorno[100][100]){
+	int j = 0, x = 0, z = 0;
+	int contPipe = 0;
+	for(int i = 0; usuario[i] != '\0'; i++){
+		if(usuario[i] == '|'){
+			contPipe++;
+		}
+	}
+	if(contPipe == 0)return 1;
+	for(int i = 0; usuario[i] != '\0'; i++){
+		retorno[x][z] = usuario[i];
+		z++;
+		if(usuario[i+1] == '|'){
+			z = 0;
+			x++;
+			i++;
+		}
+	}
+}
+
 // Separa el String recibido del usuario en un array de Strings por cada palabra
 // Devuelve la cantidad de palabras que tiene el input del usuario
 int parsearCmd(char *usuario, char retorno[100][100]) {
@@ -46,8 +73,12 @@ int main(){
 		dirprint();
 		fgets(args, sizeof(args), stdin); // Lee input desde stdin y lo guarda en args
 		args[strcspn(args, "\n")] = '\0'; // Reemplaza el primer salto de línea por ser el final de String
-		int nLineas = parsearCmd(args, parseado);
-
+		pipeDetec(args, parseado);
+		/*
+		for(int i = 0; i < 6; i++){
+			printf("%s\n",parseado[i]);
+		}
+		*/
 		// Comando 'exit [n]', retorna con valor n, si no se ingresa nada o algo que no es un número retorna con 0
 		if(strcmp(parseado[0], "exit") == 0) {
 			if (atoi(parseado[1]) != 0) {
