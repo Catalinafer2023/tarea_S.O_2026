@@ -52,10 +52,8 @@ void comandoExterno(char *parseado[]) {
 }
 
 int main(){
-	char args[100];				// Input completo del usuario
+	char args[100];			// Input completo del usuario
 	char *parseado[100];	// Array del input por palabra
-	char di[100];
-	//char t[] = "$HOME";
 
 	// Bucle principal de la shell
 	while(1) {
@@ -63,46 +61,29 @@ int main(){
 		fgets(args, sizeof(args), stdin); // Lee input desde stdin y lo guarda en args
 		args[strcspn(args, "\n")] = '\0'; // Reemplaza el primer salto de línea por ser el final de String
 		int nLineas = parsearCmd(args, parseado);
-		
-
-
-		// WIP
 
 		if (nLineas > 0) {
-			if(strcmp(parseado[0], "cambdir") == 0) {
-				fgets(di, sizeof(di), stdin);
-	
-				/*
-				if(di[0] == '\n') {
-					for (int i = 0; i < 5; i++) {
-						di[i] = t[i];						
+			// Comando 'cd [dir]', cambia el directorio al especificado, sin argumentos devuelve a $HOME
+			if(strcmp(parseado[0], "cd") == 0) {
+				if(nLineas > 1) {
+					// Buffer 'dir' para considerar espacios como nombres de directorios en vez de un argumento nuevo
+					char dir[100] = {'\0'};
+					strcat(dir, parseado[1]);
+					for(int i = 2; i < nLineas; i++){
+						strcat(dir, " ");
+						strcat(dir, parseado[i]);
 					}
-					printf("%s\n", di);
+
+					if(chdir(dir) != 0)
+						perror("Error");
 				} else {
-					printf("malo\n");
+					if(chdir(getenv("HOME")) != 0) // Nota: Esto lleva a home/[user]/, no es claro si en vez debería retornar a home/
+						perror("Error");
 				}
-					*/
-				di[strcspn(di, "\n")] = '\0';
-				chdir(".."); // pensar como funciona esto
-
-				// CUANDO ESTO FUNCIONE: añadir que si no lee un argumento, use &HOME
-				// DEBERIA VERIFICAR SI ES UN DIRECTORIO REAL??
 			}
-		}
 
-		if (nLineas > 0) {
-			if(strcmp(parseado[0], "muesdir") == 0) {
-				printf("%s\n", getcwd(di, 100));
-			}
-		}
-
-		// 	WIP
-
-
-
-		// Comando 'exit [n]', retorna con valor n, si no se ingresa nada o algo que no es un número retorna con 0
-		if(nLineas > 0) {
-			if(strcmp(parseado[0], "exit") == 0) {
+			// Comando 'exit [n]', retorna con valor n, si no se ingresa nada o algo que no es un número retorna con 0
+			else if (strcmp(parseado[0], "exit") == 0) {
 				if (nLineas > 1) {
 					if (atoi(parseado[1]) != 0) {
 						printf("return con %d\n", atoi(parseado[1]));
@@ -112,6 +93,7 @@ int main(){
 				printf("return con 0\n");
 				return 0;
 			}
+			// Si no se reconoce ningún comando interno, se ejecutará un comando externo con fork + execvp
 			else {comandoExterno(parseado);}
 		}
 	}
