@@ -64,10 +64,12 @@ void sigchld_handler(int sig){
 	(void)sig;
 	pid_t pid;
 	int status;
+
 	while((pid=waitpid(-1, &status, WNOHANG)) > 0) {
+		
 		for(int i=0; i<MAX_JOBS; i++){
 			if(jobs[i].activo && jobs[i].pid==pid) {
-				printf("[%d]+ Done %s\n", i, jobs[i].comando);
+				printf("[%d]+ Done %s\n", i+1, jobs[i].comando);
 				jobs[i].activo=0;
 				break;
 			}
@@ -82,6 +84,7 @@ void agregaJob(pid_t pid, const char *comando){
 			strncpy(jobs[i].comando, comando, sizeof(jobs[i].comando)-1);
 			jobs[i].comando[sizeof(jobs[i].comando)-1]='\0';
 			jobs[i].activo=1;
+
 			printf("[%d] %d\n", i+1, pid);
 			return;
 		}
@@ -122,16 +125,10 @@ void comandoExterno(char *comando[], int correrEnBackg) {
 		pid_t pid = fork();
 
 		if(pid == 0) {
-			if(setsid() < 0) {perror("Error");}
-
-			signal(SIGHUP, SIG_IGN);
-			pid = fork();
-			if(pid < 0) perror("Error");
-			if(pid > 0) exit(0);
-
-			chdir("/");
-			close(0); close(1); close(2);
-
+			execvp(comando[0], comando);
+			perror("Error");
+			exit(1);
+		} else if (pid > 0) {
 			// Buffer para reconstruir el comando con espacios en un solo string
 			char buffer[256] = {'\0'};
 			strcat(buffer, comando[0]);
@@ -139,12 +136,8 @@ void comandoExterno(char *comando[], int correrEnBackg) {
 				strcat(buffer, " ");
 				strcat(buffer, comando[i]);
 			}
-			printf("%s", buffer);
-			
-			agregaJob(getpid(), buffer);
-			execvp(comando[0], comando);
-			perror("Error");
-			exit(1);
+
+			agregaJob(pid, buffer);
 		}
 		else if (pid < 0) {
 			perror("Error");
