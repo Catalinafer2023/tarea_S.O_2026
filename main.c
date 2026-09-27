@@ -262,6 +262,22 @@ int main(){
 				}
 			}
 
+			// Comando "pmon [segundos]" para monitorear procesos, manejado en la función ejecutarPmon [[ WIP ]]
+			else if (strcmp(parseado[0], "pmon") == 0) {
+				if (nLineas > 1) {
+					if(atoi(parseado[1]) != 0) {
+						ejecutarPmon(atoi(parseado[1]));
+					} else
+						printf("Ingresar cantidad de segundos mayor a 0. Ej: 'pmon 2'\n");
+				} else
+					ejecutarPmon(2);
+			}
+
+			// Comando "jobs" para recibir una lista de los trabajos en background
+			else if (strcmp(args, "jobs") == 0) {
+				listaJobs();
+			}
+
 			// Comando 'exit [n]', retorna con valor n, si no se ingresa nada o algo que no es un número retorna con 0
 			else if (strcmp(parseado[0], "exit") == 0) {
 				if (nLineas > 1) {
