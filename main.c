@@ -36,48 +36,14 @@ int parsearCmd(char *usuario, char *retorno[]) {
 	return nPalabra;
 }
 
-void comandoBackground(char *parseado[]) {
-	pid_t pid = fork();
-
-	if(pid == 0) {
-		if(setsid() < 0) {perror("Error");}
-
-		signal(SIGHUP, SIG_IGN);
-		pid = fork();
-		if(pid < 0) perror("Error");
-		if(pid > 0) exit(0);
-
-		chdir("/");
-		close(0); close(1); close(2);
-
-		// IMPORTANTE : Hace falta eliminar '&' de parseado para ejecutar execvp correctamente.
-		//execvp(parseado[0], parseado);
-		char *sample[] = {"sleep", "5", NULL}; // Arreglo de strings de prueba, eliminar mas tarde
-		// IMPORTANTE : Se debe imprimir y almacenar el job(?) y PID del proceso de fondo creado
-		execvp(sample[0], sample);
-		perror("Error");
-		exit(1);
+// Manejador que revisa que haya un & al final de un comando y lo quita de la frase
+int identificarBackground(char *frase[], int nLineas) {
+	int background = 0;
+	if(strcspn(frase[nLineas-1], "&") == '\0') {
+		background = 1;
+		frase[nLineas-1] = NULL;
 	}
-	else if (pid < 0) {
-		perror("Error");
-	}
-}
-
-void comandoExterno(char *parseado[]) {
-	pid_t pid = fork();
-
-	if(pid == 0) {
-		execvp(parseado[0], parseado);
-		perror("Error");
-		exit(1);
-	}
-	else if (pid > 0) {
-		int status;
-		waitpid(pid, &status, 0);
-	}
-	else {
-		perror("Error");
-	}
+	return background;
 }
 
 typedef struct{
@@ -101,6 +67,7 @@ void sigchld_handler(int sig){
 	while((pid=waitpid(-1, &status, WNOHANG)) > 0) {
 		for(int i=0; i<MAX_JOBS; i++){
 			if(jobs[i].activo && jobs[i].pid==pid) {
+				printf("[%d]+ Done %s\n", i, jobs[i].comando);
 				jobs[i].activo=0;
 				break;
 			}
@@ -116,7 +83,7 @@ void agregaJob(pid_t pid, const char *comando){
 			jobs[i].comando[sizeof(jobs[i].comando)-1]='\0';
 			jobs[i].activo=1;
 			printf("[%d] %d\n", i+1, pid);
-			break;
+			return;
 		}
 	}
 	printf("No hay espacio para más jobs\n");
@@ -126,6 +93,61 @@ void listaJobs(){
 	for(int i=0; i<MAX_JOBS; i++){
 		if(jobs[i].activo){
 			printf("[%d] Se esta ejecutando: %s\n", i+1, jobs[i].comando);
+		}
+	}
+}
+
+// Función que maneja todo tipo de comando externo a la shell, recibe el arreglo de strings de comando y un int 0 (false) o 1 (true)
+// Para identificar si se debe correr en el background o no
+void comandoExterno(char *comando[], int correrEnBackg) {
+	// No se identificó que se quiera ejecutar en el background así que se ejecuta un fork + execvp normal
+	if (correrEnBackg == 0) {
+		pid_t pid = fork();
+
+		if(pid == 0) {
+			execvp(comando[0], comando);
+			perror("Error");
+			exit(1);
+		}
+		else if (pid > 0) {
+			int status;
+			waitpid(pid, &status, 0);
+		}
+		else {
+			perror("Error");
+		}
+	}
+	// Si se identifica un & al final, entonces se ejecutará en el background
+	else if (correrEnBackg == 1) {
+		pid_t pid = fork();
+
+		if(pid == 0) {
+			if(setsid() < 0) {perror("Error");}
+
+			signal(SIGHUP, SIG_IGN);
+			pid = fork();
+			if(pid < 0) perror("Error");
+			if(pid > 0) exit(0);
+
+			chdir("/");
+			close(0); close(1); close(2);
+
+			// Buffer para reconstruir el comando con espacios en un solo string
+			char buffer[256] = {'\0'};
+			strcat(buffer, comando[0]);
+			for(int i = 1; comando[i] != NULL; i++){
+				strcat(buffer, " ");
+				strcat(buffer, comando[i]);
+			}
+			printf("%s", buffer);
+			
+			agregaJob(getpid(), buffer);
+			execvp(comando[0], comando);
+			perror("Error");
+			exit(1);
+		}
+		else if (pid < 0) {
+			perror("Error");
 		}
 	}
 }
@@ -213,7 +235,6 @@ void ejecutarPmon(int segundos) {
 }
 
 int main(){
-
 	struct sigaction sa_chld, sa_sign; // Estructuras para manejar señales
 	sa_sign.sa_handler=SIG_IGN;
 	sigemptyset(&sa_sign.sa_mask);
@@ -233,12 +254,6 @@ int main(){
 		dirprint();
 		fgets(args, sizeof(args), stdin); // Lee input desde stdin y lo guarda en args
 		args[strcspn(args, "\n")] = '\0'; // Reemplaza el primer salto de línea por ser el final de String
-
-		// Manejador que revisa que haya un único & al final del input.
-		// IMPORTANTE : seguramente esto debería en realidad revisarse como la última palabra de parseado (una vez se defina este)
-		int correrEnBackg = 0;
-		if(args[strcspn(args, "&")] != '\0' && args[strcspn(args, "&") + 1] == '\0')
-			correrEnBackg = 1;
 
 		int nLineas = parsearCmd(args, parseado);
 
@@ -290,13 +305,10 @@ int main(){
 				return 0;
 			}
 
-			// Si no se reconoce ningún comando interno, se ejecutará un comando externo con fork + execvp
-			// Si se identifica un &, se correrá como proceso de fondo
+			// Si no se reconoce ningún comando interno, se ejecutará un comando externo
+			// La función identificarBackground decide si se debe ejectuar en el background o no
 			else {
-				if(correrEnBackg) {
-					comandoBackground(parseado);
-				}
-				else comandoExterno(parseado);
+				comandoExterno(parseado, identificarBackground(parseado, nLineas));
 			}
 		}
 	}
