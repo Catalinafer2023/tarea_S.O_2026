@@ -135,15 +135,20 @@ typedef struct{
 	unsigned long long stime;
 } ProcTime;
 
-int obtenerTiempoProceso(pid_t pid, ProcTime *pt, char  estado){
+int obtenerTiempoProceso(pid_t pid, ProcTime *pt, char *estado){
 	char path[256];
 	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
 	FILE *f= fopen(path, "r");
 	if(!f) return 0;
 	char comm[256];
-	fscanf(f, "%*d %s %c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu", comm, &estado, &pt->utime, &pt->stime);
+	fscanf(f, "%*d %s %c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu", comm, estado, &pt->utime, &pt->stime);
 	fclose(f);
 	return 1;
+}
+
+// [[Placeholder]]
+long obtenerRssProc(pid_t jobPid) {
+	return 0;
 }
 
 void ejecutarPmon(int segundos) {
@@ -161,7 +166,7 @@ void ejecutarPmon(int segundos) {
     sa_alarm.sa_flags = 0;
     sigaction(SIGALRM, &sa_alarm, NULL);
 
-    ProcTimes prev_times[MAX_JOBS] = {0};
+    ProcTime prev_times[MAX_JOBS] = {0};
     long ticks_per_sec = sysconf(_SC_CLK_TCK);
 
     while (1) {
@@ -174,10 +179,10 @@ void ejecutarPmon(int segundos) {
 
         for (int i = 0; i < MAX_JOBS; i++) {
             if (jobs[i].activo) {
-                ProcTimes curr;
+                ProcTime curr;
                 char state_char;
 
-                if (!obtenerTiemposProc(jobs[i].pid, &curr, &state_char)) {
+                if (!obtenerTiempoProceso(jobs[i].pid, &curr, &state_char)) {
                     jobs[i].activo = 0; // Si desapareció de /proc, retirar
                     continue;
                 }
@@ -210,11 +215,11 @@ void ejecutarPmon(int segundos) {
 int main(){
 
 	struct sigaction sa_chld, sa_sign; // Estructuras para manejar señales
-	sa_ign.sa_handler=SIG_IGN;
-	sigemptyset(&sa_ign.sa_mask);
-	sa_ign.sa_flags=0;
-	sigaction(SIGCHLD, &sa_ign, NULL);
-	sigaction(SIGQUIT, &sa_ign, NULL);
+	sa_sign.sa_handler=SIG_IGN;
+	sigemptyset(&sa_sign.sa_mask);
+	sa_sign.sa_flags=0;
+	sigaction(SIGCHLD, &sa_sign, NULL);
+	sigaction(SIGQUIT, &sa_sign, NULL);
 	sa_chld.sa_handler=sigchld_handler;
 	sigemptyset(&sa_chld.sa_mask);
 	sa_chld.sa_flags=SA_RESTART | SA_NOCLDSTOP;
