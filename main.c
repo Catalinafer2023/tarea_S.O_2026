@@ -208,6 +208,18 @@ void ejecutarPmon(int segundos) {
 }
 
 int main(){
+
+	struct sigaction sa_chld, sa_sign; // Estructuras para manejar señales
+	sa_ign.sa_handler=SIG_IGN;
+	sigemptyset(&sa_ign.sa_mask);
+	sa_ign.sa_flags=0;
+	sigaction(SIGCHLD, &sa_ign, NULL);
+	sigaction(SIGQUIT, &sa_ign, NULL);
+	sa_chld.sa_handler=sigchld_handler;
+	sigemptyset(&sa_chld.sa_mask);
+	sa_chld.sa_flags=SA_RESTART | SA_NOCLDSTOP;
+	sigaction(SIGCHLD, &sa_chld, NULL);
+
 	char args[100];			// Input completo del usuario
 	char *parseado[100];	// Array del input por palabra
 
