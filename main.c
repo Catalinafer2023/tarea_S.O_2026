@@ -33,49 +33,69 @@ int parsearCmd(char *usuario, char retorno[100][100]) {
     }
 	retorno[nPalabra][nCaracter] = '\0';
 
-	// Se añade 1 para compensar por el index 0
-	return nPalabra + 1;
+	return nPalabra + (dentroPalabra ? 1 : 0);
 }
 
 //toma las pipes y las parsea como comandos normales antes de
 //ejecutarlas
-void execPipe(char pipes[100][100]){
-	char *args[] = {NULL};
-	char *args2[] = {NULL};
-	char cmd[100][100];
-	char cmd2[100][100];
-	int fd[2];
-	pipe(fd);
-	pid_t pipe1 = fork();
-	if(pipe1 == 0){
-		dup2(fd[1], STDOUT_FILENO);
-		close(fd[0]);
-		close(fd[1]);
-		parsearCmd(pipes[0],cmd);
-		if(execvp(cmd[0], args) < 0){
-			perror("error cmd1");
+void execPipe(char pipes[100][100], int nCommands){
+	int previousRead = -1;
+	pid_t children[100];
+	int nChildren = 0;
+
+	for(int i = 0; i < nCommands; i++){
+		int fd[2] = {-1, -1};
+		int hasNext = i < nCommands - 1;
+		if(hasNext && pipe(fd) < 0){
+			perror("pipe");
+			if(previousRead != -1) close(previousRead);
+			for(int j = 0; j < nChildren; j++) waitpid(children[j], NULL, 0);
+			return;
 		}
-		exit(1);
-	}
-	pid_t pipe2 = fork();
-	if(pipe2 == 0){
-		dup2(fd[0],STDIN_FILENO);
-		close(fd[1]);
-		close(fd[0]);
-		parsearCmd(pipes[1],cmd2);
-		if(execvp(cmd2[0], args2) < 0){
-			perror("error cmd2");
+
+		pid_t pid = fork();
+		if(pid < 0){
+			perror("fork");
+			if(previousRead != -1) close(previousRead);
+			if(hasNext){
+				close(fd[0]);
+				close(fd[1]);
+			}
+			for(int j = 0; j < nChildren; j++) waitpid(children[j], NULL, 0);
+			return;
 		}
-		exit(1);
+		if(pid == 0){
+			if(previousRead != -1) dup2(previousRead, STDIN_FILENO);
+			if(hasNext) dup2(fd[1], STDOUT_FILENO);
+			if(previousRead != -1) close(previousRead);
+			if(hasNext){
+				close(fd[0]);
+				close(fd[1]);
+			}
+
+			char cmd[100][100];
+			char *argv[101];
+			int argc = parsearCmd(pipes[i], cmd);
+			for(int j = 0; j < argc; j++) argv[j] = cmd[j];
+			argv[argc] = NULL;
+			if(argc == 0 || execvp(argv[0], argv) < 0) perror("error comando");
+			exit(1);
+		}
+
+		children[nChildren++] = pid;
+		if(previousRead != -1) close(previousRead);
+		previousRead = -1;
+		if(hasNext){
+			close(fd[1]);
+			previousRead = fd[0];
+		}
 	}
-	close(fd[0]);
-    close(fd[1]);
-	wait(NULL);
-	wait(NULL);
+
+	for(int i = 0; i < nChildren; i++) waitpid(children[i], NULL, 0);
 }
 
 //función para correr comandos normales
-int normCommand(char parseado[100][100]){
+void normCommand(char parseado[100][100]){
 	char *args[] = {NULL};
 	pid_t pid = fork();
 	if(pid == 0){
@@ -88,24 +108,20 @@ int normCommand(char parseado[100][100]){
 }
 
 // toma los comandos y los separa por pipes
-void parsearPipe(char *usuario, char pipes[100][100]){
-	int j = 0, x = 0,z = 0;
-	int contPipe = 0;
-	for(int i = 0; usuario[i] != '\0'; i++){
+int parsearPipe(char *usuario, char pipes[100][100]){
+	int command = 0;
+	int character = 0;
+	for(int i = 0; usuario[i] != '\0' && usuario[i] != '\n'; i++){
 		if(usuario[i] == '|'){
-			contPipe++;
+			pipes[command][character] = '\0';
+			command++;
+			character = 0;
+		} else {
+			pipes[command][character++] = usuario[i];
 		}
 	}
-		while(usuario[j] != '\0' && usuario[j] != '\n'){
-			if(usuario[j] == '|'){
-				z++;
-				j++;
-				x = 0;
-			}
-			pipes[z][x] = usuario[j];
-			x++;
-			j++;
-		}
+	pipes[command][character] = '\0';
+	return command + 1;
 }
 
 int main(){
@@ -131,8 +147,8 @@ int main(){
 			normCommand(parseado);
 		}
 		else{
-			parsearPipe(args,pipes);
-			execPipe(pipes);
+			int nCommands = parsearPipe(args,pipes);
+			execPipe(pipes, nCommands);
 		}
 	}
 }
