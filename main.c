@@ -335,96 +335,68 @@ void ejecutarPmon(int segundos) {
 
 //toma las pipes y las parsea como comandos normales antes de
 //ejecutarlas
-void execPipe(char pipes[100][100]){
+void execPipe(char *pipes[100][100], int enBackground){
+	int fd[2];
+	char buffer[100];
+	int nbytes;
 	char *args[] = {NULL};
 	char *args2[] = {NULL};
 	char cmd[100][100];
 	char cmd2[100][100];
-	int fd[2];
-	pipe(fd);
-	pid_t pipe1 = fork();
-	if(pipe1 == 0){
-		dup2(fd[1], STDOUT_FILENO);
-		close(fd[0]);
-		close(fd[1]);
-		parsearCmd(pipes[0],cmd);
-		if(execvp(cmd[0], args) < 0){
-			perror("error cmd1");
+
+	//Si no hay ninguna pipe se ejecuta el comando normalmente
+	if(pipes[1][0] == NULL) {
+		comandoExterno(pipes[0], enBackground);
+	} else {
+		for(int i = 0; pipes[i+1][0] != NULL; i++) {
+			pipe(fd);
+			pid_t pipe1 = fork();
+			if(pipe1 == 0){
+				dup2(fd[1], STDOUT_FILENO);
+				close(fd[0]);
+				close(fd[1]);
+				comandoExterno(pipes[i], enBackground);
+				exit(1);
+			}
+			pid_t pipe2 = fork();
+			if(pipe2 == 0){
+				dup2(fd[0],STDIN_FILENO);
+				close(fd[1]);
+				close(fd[0]);
+				comandoExterno(pipes[i+1], enBackground);
+				exit(1);
+			}
+			close(fd[0]);
+			close(fd[1]);
+			wait(NULL);
+			wait(NULL);
 		}
-		exit(1);
 	}
-	pid_t pipe2 = fork();
-	if(pipe2 == 0){
-		dup2(fd[0],STDIN_FILENO);
-		close(fd[1]);
-		close(fd[0]);
-		parsearCmd(pipes[1],cmd2);
-		if(execvp(cmd2[0], args2) < 0){
-			perror("error cmd2");
-		}
-		exit(1);
-	}
-	close(fd[0]);
-    close(fd[1]);
-	wait(NULL);
-	wait(NULL);
 }
 
 // toma los comandos y los separa por pipes
-void parsearPipe(char *comando[], char *pipes[100][100]){
-	int contPalabras = 0;
-	int largoCmd = 0;
-	int contCmd = 0;
+void parsearPipe(char *cmdUser[], int nLineas, char *pipes[100][100]){
+	int palabra = 0;
+	int comando = 0;
+	int userPalabras = 0;
+	int enBackground = identificarBackground(cmdUser, nLineas);
 
-	while(comando[contPalabras] != NULL) {
-		if(strcmp(comando[contPalabras], "|") != 0) {
-			largoCmd++;
+
+	for(int i = 0; cmdUser[i] != NULL; i++) {
+		userPalabras++;
+		if(strcmp(cmdUser[i], "|") != 0) {
+			pipes[comando][palabra++] = cmdUser[i];
 		} else {
-			strcpy(pipes[contCmd], comando[contPalabras-largoCmd]);
-			largoCmd--;
-			while(contPalabras-largoCmd < contPalabras) {
-				strcat(pipes[contCmd], " ");
-				strcat(pipes[contCmd], comando[contPalabras-largoCmd]);
-				largoCmd--;
-			}
-			contCmd++;
-		}
-		contPalabras++;
-	}
-	/*
-	strcat(pipes[contCmd], comando[contPalabras-largoCmd]);
-	largoCmd--;
-	while(contPalabras-largoCmd < contPalabras) {
-		strcat(pipes[contCmd], " ");
-		strcat(pipes[contCmd], comando[contPalabras-largoCmd]);
-		largoCmd--;
-	}
-	contCmd++;
-	*/
-	
-	strcpy(pipes[contCmd], "\0");
-	for(int i = 0; strcmp(pipes[i], "") != 0; i++) {
-		comandoExterno(pipes[i])
-		printf("%s\n", pipes[i]);
-	}
-	/*
-	int j = 0, x = 0,z = 0;
-	for(int i = 0; usuario[i] != '\0'; i++){
-		if(usuario[i] == '|'){
-			contPipe++;
+			pipes[comando][palabra] = NULL;
+			palabra = 0;
+			comando++;
 		}
 	}
-	while(usuario[j] != '\0' && usuario[j] != '\n'){
-		if(usuario[j] == '|'){
-			z++;
-			j++;
-			x = 0;
-		}
-		pipes[z][x] = usuario[j];
-		x++;
-		j++;
-	}
-	*/
+	pipes[++comando][0] = NULL;
+
+
+	execPipe(pipes, enBackground);
+	//comandoExterno(pipes[i], enBackground);
 }
 
 int main(){
@@ -442,7 +414,7 @@ int main(){
 
 	char args[100];			// Input completo del usuario
 	char *parseado[100];	// Array del input por palabra
-	char pipes[100][100];
+	char *pipes[100][100];
 
 	// Bucle principal de la shell
 	while(1) {
@@ -504,7 +476,7 @@ int main(){
 			// La función identificarBackground decide si se debe ejectuar en el background o no
 			else {
 				//comandoExterno(parseado, identificarBackground(parseado, nLineas));
-				parsearPipe(parseado, pipes);
+				parsearPipe(parseado, nLineas, pipes);
 			}
 		}
 	}
