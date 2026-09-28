@@ -54,10 +54,16 @@ typedef struct{
 
 Job jobs[MAX_JOBS];
 volatile sig_atomic_t pmon_flag = 0;
+volatile sig_atomic_t pmon_stop = 0;
 
 void sigalrm_handler(int sig){
 	(void)sig; // Evita advertencias de compilación
 	pmon_flag = 1;
+}
+
+void pmon_sigint_handler(int sig){
+	(void)sig; // Evita advertencias de compilación
+	pmon_stop = 1;
 }
 
 void sigchld_handler(int sig){
@@ -208,13 +214,13 @@ long obtenerRssProc(pid_t jobPid) {
 }
 
 void ejecutarPmon(int segundos) {
-    struct sigaction sa_old, sa_new, sa_alarm;
+    struct sigaction sa_old_int, sa_new_int, sa_alarm;
 
     // Temporalmente restaurar SIGINT para salir de pmon con ctrl+C sin cerrar la shell
-    sa_new.sa_handler = SIG_DFL;
-    sigemptyset(&sa_new.sa_mask);
-    sa_new.sa_flags = 0;
-    sigaction(SIGINT, &sa_new, &sa_old);
+    sa_new_int.sa_handler = pmon_sigint_handler;
+    sigemptyset(&sa_new_int.sa_mask);
+    sa_new_int.sa_flags = 0;
+    sigaction(SIGINT, &sa_new_int, &sa_old_int);
 
     // Configurar alarma con alarm() y SIGALRM
     sa_alarm.sa_handler = sigalrm_handler;
@@ -225,7 +231,9 @@ void ejecutarPmon(int segundos) {
     ProcTime prev_times[MAX_JOBS] = {0};
     long ticks_per_sec = sysconf(_SC_CLK_TCK);
 
-    while (1) {
+	pmon_stop = 0;
+
+    while (!pmon_stop) {
         alarm(segundos);
         pmon_flag = 0;
 
@@ -260,11 +268,10 @@ void ejecutarPmon(int segundos) {
         }
 
         pause(); // Espera la señal de la alarma o Ctrl+C
-        if (!pmon_flag) break; // Si la interrupción no fue de la alarma, sale de pmon
     }
 
     alarm(0);
-    sigaction(SIGINT, &sa_old, NULL);
+    sigaction(SIGINT, &sa_old_int, NULL);
     printf("\nSaliendo de pmon...\n");
 }
 
@@ -278,7 +285,7 @@ int main(){
 	sigaction(SIGTSTP, &sa_sign, NULL); // Ignorar Ctrl+Z en la shell
 	sa_chld.sa_handler=sigchld_handler;
 	sigemptyset(&sa_chld.sa_mask);
-	sa_chld.sa_flags=SA_RESTART;
+	sa_chld.sa_flags=SA_RESTART | SA_NOCLDSTOP	;
 	sigaction(SIGCHLD, &sa_chld, NULL);
 
 	char args[100];			// Input completo del usuario
