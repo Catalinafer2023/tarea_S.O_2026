@@ -65,7 +65,7 @@ void sigchld_handler(int sig){
 	pid_t pid;
 	int status;
 
-	while((pid=waitpid(-1, &status, WNOHANG)) > 0) {
+	while((pid=waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
 		
 		for(int i=0; i<MAX_JOBS; i++){
 			if(jobs[i].activo && jobs[i].pid==pid) {
@@ -108,13 +108,31 @@ void comandoExterno(char *comando[], int correrEnBackg) {
 		pid_t pid = fork();
 
 		if(pid == 0) {
+
+			struct sigaction sa_default;
+            sa_default.sa_handler = SIG_DFL;
+            sigemptyset(&sa_default.sa_mask);
+            sa_default.sa_flags = 0;
+            sigaction(SIGINT, &sa_default, NULL); //Interrumpir hijo con Ctrl+C
+			sigaction(SIGQUIT, &sa_default, NULL); //Core dump hijo con Ctrl+"\"
+			sigaction(SIGTSTP, &sa_default, NULL); //Suspender hijo con Ctrl+Z
+
 			execvp(comando[0], comando);
 			perror("Error");
 			exit(1);
 		}
 		else if (pid > 0) {
 			int status;
-			waitpid(pid, &status, 0);
+			waitpid(pid, &status, WUNTRACED);
+			if(WIFSTOPPED(status)){ // Si el proceso hijo fue detenido, se agrega a la lista de jobs
+				char buffer[256] = {'\0'};
+				strcat(buffer, comando[0]);
+				for(int i = 1; comando[i] != NULL; i++){
+					strcat(buffer, " ");
+					strcat(buffer, comando[i]);
+				}
+				agregaJob(pid, buffer);
+			}
 		}
 		else {
 			perror("Error");
@@ -125,6 +143,16 @@ void comandoExterno(char *comando[], int correrEnBackg) {
 		pid_t pid = fork();
 
 		if(pid == 0) {
+			//Ignorar señales SIGINT, SIGQUIT y SIGTSTP en el proceso hijo para que no se cierre con Ctrl+C, Ctrl+\ o Ctrl+Z
+			struct sigaction sa_ign;
+			sa_ign.sa_handler = SIG_IGN;
+			sigemptyset(&sa_ign.sa_mask);
+			sa_ign.sa_flags = 0;
+			sigaction(SIGINT, &sa_ign, NULL);
+			sigaction(SIGQUIT, &sa_ign, NULL);
+			sigaction(SIGTSTP, &sa_ign, NULL);
+
+
 			execvp(comando[0], comando);
 			perror("Error");
 			exit(1);
@@ -161,9 +189,22 @@ int obtenerTiempoProceso(pid_t pid, ProcTime *pt, char *estado){
 	return 1;
 }
 
-// [[Placeholder]]
+//Leer memoria residente RSS
 long obtenerRssProc(pid_t jobPid) {
-	return 0;
+	char path[256], line[256];
+	snprintf(path, sizeof(path), "/proc/%d/status", jobPid);
+	FILE *f = fopen(path, "r");
+	if (!f) return 0;
+
+	long rss = 0;
+	while (fgets(line, sizeof(line), f)) {
+		if (strncmp(line, "VmRSS:", 6) == 0) {
+			sscanf(line + 6, "%ld", &rss);
+			break;
+		}
+	}
+	fclose(f);
+	return rss;
 }
 
 void ejecutarPmon(int segundos) {
@@ -232,11 +273,12 @@ int main(){
 	sa_sign.sa_handler=SIG_IGN;
 	sigemptyset(&sa_sign.sa_mask);
 	sa_sign.sa_flags=0;
-	sigaction(SIGCHLD, &sa_sign, NULL);
-	sigaction(SIGQUIT, &sa_sign, NULL);
+	sigaction(SIGINT, &sa_sign, NULL); // Ignorar Ctrl+C en la shell
+	sigaction(SIGQUIT, &sa_sign, NULL); // Ignorar Ctrl+\ en la shell
+	sigaction(SIGTSTP, &sa_sign, NULL); // Ignorar Ctrl+Z en la shell
 	sa_chld.sa_handler=sigchld_handler;
 	sigemptyset(&sa_chld.sa_mask);
-	sa_chld.sa_flags=SA_RESTART | SA_NOCLDSTOP;
+	sa_chld.sa_flags=SA_RESTART;
 	sigaction(SIGCHLD, &sa_chld, NULL);
 
 	char args[100];			// Input completo del usuario
@@ -282,7 +324,7 @@ int main(){
 			}
 
 			// Comando "jobs" para recibir una lista de los trabajos en background
-			else if (strcmp(args, "jobs") == 0) {
+			else if (strcmp(parseado[0], "jobs") == 0) {
 				listaJobs();
 			}
 
