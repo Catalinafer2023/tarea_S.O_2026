@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <signal.h>
 #include <time.h>
@@ -100,14 +101,79 @@ void listaJobs(){
 	}
 }
 
+// Función que toma nombres de los archivos de entrada y salida, y si se hará append o no
+void revisarRedirecc(char *entrada, char *salida, int append) {
+	int fileOut;
+	if(!append) {
+		fileOut = open(salida, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	} else {
+		fileOut = open(salida, O_WRONLY | O_CREAT | O_APPEND, 0644);
+	}
+	int fileIn = open(entrada, O_RDONLY, 0);
+
+	if(strcmp(salida, "") != 0) {
+		if(fileOut < 0) {
+			perror("Error al abir archivo de salida");
+			_exit(1);
+		}
+		if(dup2(fileOut, STDOUT_FILENO) < 0) {
+			perror("Error de redirección");
+			_exit(1);
+		}
+	}
+	if(strcmp(entrada, "") != 0) {
+		if(fileIn < 0) {
+			perror("Error al abir archivo de entrada");
+			_exit(1);
+		}
+		if(dup2(fileIn, STDIN_FILENO) < 0) {
+			perror("Error de redirección");
+			_exit(1);
+		}
+	}
+	close(fileOut);
+	close(fileIn);
+}
+
 // Función que maneja todo tipo de comando externo a la shell, recibe el arreglo de strings de comando y un int 0 (false) o 1 (true)
 // Para identificar si se debe correr en el background o no
 void comandoExterno(char *comando[], int correrEnBackg) {
+	// Identificar redireccionamiento entrada y salida
+	char cmdEntrada[100] = {'\0'};
+	char cmdSalida[100] = {'\0'};
+	int modoAppend = 0;
+
+	// Se recorre cada palabra, hasta la penúltima para identificar si el usuario agregó redireccionamiento
+	for(int i = 0; comando[i+1] != NULL; i++) {
+		if(strcmp(comando[i], ">") == 0) {
+			if (strcmp(cmdSalida, "\0") == 0) {
+				strcpy(cmdSalida, comando[i+1]);
+				modoAppend = 0;
+				comando[i] = NULL;
+			} else printf("Solo se admite un redireccionamiento de salida\n");
+		} else if (strcmp(comando[i], ">>") == 0) {
+			if (strcmp(cmdSalida, "\0") == 0) {
+				strcpy(cmdSalida, comando[i+1]);
+				modoAppend = 1;
+				comando[i] = NULL;
+			} else printf("Solo se admite un redireccionamiento de salida\n");
+		} else if (strcmp(comando[i], "<") == 0) {
+			if (strcmp(cmdEntrada, "\0") == 0) {
+				strcpy(cmdEntrada, comando[i+1]);
+				comando[i] = NULL;
+			} else printf("Solo se admite un redireccionamiento de entrada\n");
+		}
+
+		if(strcmp(cmdSalida, ">") == 0 || strcmp(cmdSalida, ">>") == 0 || strcmp(cmdSalida, "<") == 0) {strcpy(cmdSalida, "");}
+		if(strcmp(cmdEntrada, ">") == 0 || strcmp(cmdEntrada, ">>") == 0 || strcmp(cmdEntrada, "<") == 0) {strcpy(cmdEntrada, "");}
+	}
+
 	// No se identificó que se quiera ejecutar en el background así que se ejecuta un fork + execvp normal
 	if (correrEnBackg == 0) {
 		pid_t pid = fork();
 
 		if(pid == 0) {
+			revisarRedirecc(cmdEntrada, cmdSalida, modoAppend);
 			execvp(comando[0], comando);
 			perror("Error");
 			exit(1);
@@ -125,6 +191,7 @@ void comandoExterno(char *comando[], int correrEnBackg) {
 		pid_t pid = fork();
 
 		if(pid == 0) {
+			revisarRedirecc(cmdEntrada, cmdSalida, modoAppend);
 			execvp(comando[0], comando);
 			perror("Error");
 			exit(1);
@@ -247,7 +314,6 @@ int main(){
 		dirprint();
 		fgets(args, sizeof(args), stdin); // Lee input desde stdin y lo guarda en args
 		args[strcspn(args, "\n")] = '\0'; // Reemplaza el primer salto de línea por ser el final de String
-
 		int nLineas = parsearCmd(args, parseado);
 
 		if (nLineas > 0) {
