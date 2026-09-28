@@ -331,42 +331,64 @@ void execPipe(char pipes[100][100]){
 	wait(NULL);
 }
 
-//función para correr comandos normales
-int normCommand(char parseado[100][100]){
-	char *args[] = {NULL};
-	pid_t pid = fork();
-	if(pid == 0){
-		if(execvp(parseado[0], args) < 0){
-			perror("error");
-		}
-		exit(1);
-	}
-	wait(NULL);
-}
-
 // toma los comandos y los separa por pipes
-void parsearPipe(char *usuario, char pipes[100][100]){
+void parsearPipe(char *comando[], char *pipes[100][100]){
+	int contPalabras = 0;
+	int largoCmd = 0;
+	int contCmd = 0;
+
+	while(comando[contPalabras] != NULL) {
+		if(strcmp(comando[contPalabras], "|") != 0) {
+			largoCmd++;
+		} else {
+			strcpy(pipes[contCmd], comando[contPalabras-largoCmd]);
+			largoCmd--;
+			while(contPalabras-largoCmd < contPalabras) {
+				strcat(pipes[contCmd], " ");
+				strcat(pipes[contCmd], comando[contPalabras-largoCmd]);
+				largoCmd--;
+			}
+			contCmd++;
+		}
+		contPalabras++;
+	}
+	/*
+	strcat(pipes[contCmd], comando[contPalabras-largoCmd]);
+	largoCmd--;
+	while(contPalabras-largoCmd < contPalabras) {
+		strcat(pipes[contCmd], " ");
+		strcat(pipes[contCmd], comando[contPalabras-largoCmd]);
+		largoCmd--;
+	}
+	contCmd++;
+	*/
+	
+	strcpy(pipes[contCmd], "\0");
+	for(int i = 0; strcmp(pipes[i], "") != 0; i++) {
+		comandoExterno(pipes[i])
+		printf("%s\n", pipes[i]);
+	}
+	/*
 	int j = 0, x = 0,z = 0;
-	int contPipe = 0;
 	for(int i = 0; usuario[i] != '\0'; i++){
 		if(usuario[i] == '|'){
 			contPipe++;
 		}
 	}
-		while(usuario[j] != '\0' && usuario[j] != '\n'){
-			if(usuario[j] == '|'){
-				z++;
-				j++;
-				x = 0;
-			}
-			pipes[z][x] = usuario[j];
-			x++;
+	while(usuario[j] != '\0' && usuario[j] != '\n'){
+		if(usuario[j] == '|'){
+			z++;
 			j++;
+			x = 0;
 		}
+		pipes[z][x] = usuario[j];
+		x++;
+		j++;
+	}
+	*/
 }
 
 int main(){
-	char pipes[100][100];
 	struct sigaction sa_chld, sa_sign; // Estructuras para manejar señales
 	sa_sign.sa_handler=SIG_IGN;
 	sigemptyset(&sa_sign.sa_mask);
@@ -380,30 +402,14 @@ int main(){
 
 	char args[100];			// Input completo del usuario
 	char *parseado[100];	// Array del input por palabra
+	char pipes[100][100];
 
 	// Bucle principal de la shell
 	while(1) {
 		dirprint();
 		fgets(args, sizeof(args), stdin); // Lee input desde stdin y lo guarda en args
 		args[strcspn(args, "\n")] = '\0'; // Reemplaza el primer salto de línea por ser el final de String
-		/*
-		if(strchr(args,'|') == 0){
-			parsearCmd(args,parseado);
-			if(strcmp(parseado[0], "exit") == 0) {
-				printf("exit\n");
-				if (atoi(parseado[1]) != 0) {
-					printf("return con %d\n", atoi(parseado[1]));
-					return atoi(parseado[1]);
-				}
-				printf("return con 0\n");
-				return 0;
-			}
-			normCommand(parseado);
-		}
-		else{
-			parsearPipe(args,pipes);
-			execPipe(pipes);
-		*/
+		
 		int nLineas = parsearCmd(args, parseado);
 
 		if (nLineas > 0) {
@@ -457,9 +463,9 @@ int main(){
 			// Si no se reconoce ningún comando interno, se ejecutará un comando externo
 			// La función identificarBackground decide si se debe ejectuar en el background o no
 			else {
-				comandoExterno(parseado, identificarBackground(parseado, nLineas));
+				//comandoExterno(parseado, identificarBackground(parseado, nLineas));
+				parsearPipe(parseado, pipes);
 			}
 		}
 	}
-}
 }
