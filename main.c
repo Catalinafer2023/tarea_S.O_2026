@@ -13,7 +13,7 @@
 // Función que imprime la dirección actual de la shell
 void dirprint(){
 	char cwd[1024];
-	printf("\nDIR:%s:~$ ", getcwd(cwd, sizeof(cwd))); 
+	printf("\nmiShell:%s$ ", getcwd(cwd, sizeof(cwd))); 
 }
 
 // Separa el String recibido del usuario en un array de Strings por cada palabra

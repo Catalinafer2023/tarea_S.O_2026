@@ -1,0 +1,5 @@
+para compilar, correr el siguiente comando:
+
+make main
+
+para correr, ejecute el archivo "mishell"
