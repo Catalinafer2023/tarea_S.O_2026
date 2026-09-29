@@ -105,10 +105,16 @@ typedef struct{
 
 Job jobs[MAX_JOBS];
 volatile sig_atomic_t pmon_flag = 0;
+volatile sig_atomic_t pmon_interrupted = 0;
 
 void sigalrm_handler(int sig){
 	(void)sig; // Evita advertencias de compilación
 	pmon_flag = 1;
+}
+
+void sigint_pmon_handler(int sig){
+	(void)sig;
+	pmon_interrupted = 1;
 }
 
 void sigchld_handler(int sig){
@@ -232,6 +238,7 @@ void comandoExterno(char *comando[], int correrEnBackg) {
 			sigaction(SIGQUIT, &sa_default, NULL); //Core dump hijo con Ctrl+"\"
 			sigaction(SIGTSTP, &sa_default, NULL); //Suspender hijo con Ctrl+Z
 
+			revisarRedirecc(cmdEntrada, cmdSalida, modoAppend);
 			execvp(comando[0], comando);
 			perror("Error");
 			exit(1);
@@ -268,6 +275,7 @@ void comandoExterno(char *comando[], int correrEnBackg) {
 			sigaction(SIGTSTP, &sa_ign, NULL);
 
 
+			revisarRedirecc(cmdEntrada, cmdSalida, modoAppend);
 			execvp(comando[0], comando);
 			perror("Error");
 			exit(1);
@@ -325,11 +333,12 @@ long obtenerRssProc(pid_t jobPid) {
 void ejecutarPmon(int segundos) {
     struct sigaction sa_old, sa_new, sa_alarm;
 
-    // Temporalmente restaurar SIGINT para salir de pmon con ctrl+C sin cerrar la shell
-    sa_new.sa_handler = SIG_DFL;
+	// Capturar Ctrl+C para salir de pmon sin cerrar la shell
+	sa_new.sa_handler = sigint_pmon_handler;
     sigemptyset(&sa_new.sa_mask);
     sa_new.sa_flags = 0;
     sigaction(SIGINT, &sa_new, &sa_old);
+	pmon_interrupted = 0;
 
     // Configurar alarma con alarm() y SIGALRM
     sa_alarm.sa_handler = sigalrm_handler;
@@ -375,7 +384,7 @@ void ejecutarPmon(int segundos) {
         }
 
         pause(); // Espera la señal de la alarma o Ctrl+C
-        if (!pmon_flag) break; // Si la interrupción no fue de la alarma, sale de pmon
+		if (pmon_interrupted || !pmon_flag) break;
     }
 
     alarm(0);
