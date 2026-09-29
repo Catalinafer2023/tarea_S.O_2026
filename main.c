@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <signal.h>
 #include <time.h>
+#include <ctype.h>
 #define MAX_JOBS 64
 
 // Función que imprime la dirección actual de la shell
@@ -18,23 +19,72 @@ void dirprint(){
 // Separa el String recibido del usuario en un array de Strings por cada palabra
 // Devuelve la cantidad de palabras que tiene el input del usuario
 int parsearCmd(char *usuario, char *retorno[]) {
-	int nPalabra = 0;
-	int dentroPalabra = 0;
-	// Se recorre cada caracter del input del usuario y se añade uno a uno a cada fila del retorno
-    for(int i = 0; usuario[i] != '\0'; i++) {
-        if (usuario[i] == ' ' || usuario[i] == '\n') {
-			usuario[i] = '\0';
-			dentroPalabra = 0;
-		} else {
-			if(!dentroPalabra) {
-				retorno[nPalabra++] = &usuario[i];
-			}
-			dentroPalabra = 1;
-		}
-    }
-	retorno[nPalabra] = NULL;
+	static char tokenStorage[200];
+	int tokenOffsets[100];
+	int readIndex = 0;
+	int writeIndex = 0;
+	int tokenCount = 0;
+	int inputLength = strlen(usuario);
 
-	return nPalabra;
+	while(readIndex < inputLength) {
+		while(readIndex < inputLength && isspace((unsigned char)usuario[readIndex])) readIndex++;
+		if(readIndex == inputLength) break;
+		if(tokenCount >= 99) return -1;
+
+		tokenOffsets[tokenCount++] = writeIndex;
+		char current = usuario[readIndex];
+		if(current == '|' || current == '<' || current == '>' || current == '&') {
+			tokenStorage[writeIndex++] = usuario[readIndex++];
+			if(current == '>' && readIndex < inputLength && usuario[readIndex] == '>') {
+				tokenStorage[writeIndex++] = usuario[readIndex++];
+			}
+			tokenStorage[writeIndex++] = '\0';
+			continue;
+		}
+
+		char quote = '\0';
+		while(readIndex < inputLength) {
+			current = usuario[readIndex];
+			if(quote == '\0') {
+				if(isspace((unsigned char)current) || current == '|' || current == '<' || current == '>' || current == '&') break;
+				if(current == '\'' || current == '"') {
+					quote = current;
+					readIndex++;
+					continue;
+				}
+				if(current == '\\') {
+					readIndex++;
+					if(readIndex < inputLength) tokenStorage[writeIndex++] = usuario[readIndex++];
+					else tokenStorage[writeIndex++] = '\\';
+					continue;
+				}
+				tokenStorage[writeIndex++] = usuario[readIndex++];
+			} else if(current == quote) {
+				quote = '\0';
+				readIndex++;
+			} else if(quote == '"' && current == '\\' && readIndex + 1 < inputLength) {
+				char escaped = usuario[readIndex + 1];
+				if(escaped == '"' || escaped == '\\' || escaped == '$' || escaped == '`') {
+					tokenStorage[writeIndex++] = escaped;
+					readIndex += 2;
+				} else {
+					tokenStorage[writeIndex++] = usuario[readIndex++];
+				}
+			} else {
+				tokenStorage[writeIndex++] = usuario[readIndex++];
+			}
+		}
+
+		if(quote != '\0') {
+			printf("Error: comillas sin cerrar\n");
+			return -1;
+		}
+		tokenStorage[writeIndex++] = '\0';
+	}
+
+	for(int i = 0; i < tokenCount; i++) retorno[i] = &tokenStorage[tokenOffsets[i]];
+	retorno[tokenCount] = NULL;
+	return tokenCount;
 }
 
 // Manejador que revisa que haya un & al final de un comando y lo quita de la frase
@@ -67,7 +117,7 @@ void sigchld_handler(int sig){
 	int status;
 
 	while((pid=waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
-		
+
 		for(int i=0; i<MAX_JOBS; i++){
 			if(jobs[i].activo && jobs[i].pid==pid) {
 				printf("[%d]+ Done %s\n", i+1, jobs[i].comando);
@@ -335,41 +385,81 @@ void ejecutarPmon(int segundos) {
 
 //toma las pipes y las parsea como comandos normales antes de
 //ejecutarlas
-void execPipe(char *pipes[100][100], int enBackground){
-	int fd[2];
-	char buffer[100];
-	int nbytes;
-	char *args[] = {NULL};
-	char *args2[] = {NULL};
-	char cmd[100][100];
-	char cmd2[100][100];
-
-	//Si no hay ninguna pipe se ejecuta el comando normalmente
-	if(pipes[1][0] == NULL) {
+void execPipe(char *pipes[100][100], int enBackground, int comandos){
+	int stageCount = comandos;
+	if(stageCount == 1) {
 		comandoExterno(pipes[0], enBackground);
-	} else {
-		for(int i = 0; pipes[i+1][0] != NULL; i++) {
-			pipe(fd);
-			pid_t pipe1 = fork();
-			if(pipe1 == 0){
-				dup2(fd[1], STDOUT_FILENO);
-				close(fd[0]);
-				close(fd[1]);
-				comandoExterno(pipes[i], enBackground);
-				exit(1);
+		return;
+	}
+
+	pid_t pids[100];
+	int processCount = 0;
+	int previousRead = -1;
+	for(int stage = 0; stage < stageCount; stage++) {
+		int nextPipe[2] = {-1, -1};
+		if(stage + 1 < stageCount && pipe(nextPipe) < 0) {
+			perror("Error al crear pipe");
+			break;
+		}
+
+		pid_t pid = fork();
+		if(pid < 0) {
+			perror("Error al crear proceso");
+			if(nextPipe[0] >= 0) close(nextPipe[0]);
+			if(nextPipe[1] >= 0) close(nextPipe[1]);
+			break;
+		}
+
+		if(pid == 0) {
+			struct sigaction sa;
+			sa.sa_handler = enBackground ? SIG_IGN : SIG_DFL;
+			sigemptyset(&sa.sa_mask);
+			sa.sa_flags = 0;
+			sigaction(SIGINT, &sa, NULL);
+			sigaction(SIGQUIT, &sa, NULL);
+			sigaction(SIGTSTP, &sa, NULL);
+
+			if(previousRead >= 0 && dup2(previousRead, STDIN_FILENO) < 0) {
+				perror("Error de redirección");
+				_exit(1);
 			}
-			pid_t pipe2 = fork();
-			if(pipe2 == 0){
-				dup2(fd[0],STDIN_FILENO);
-				close(fd[1]);
-				close(fd[0]);
-				comandoExterno(pipes[i+1], enBackground);
-				exit(1);
+			if(nextPipe[1] >= 0 && dup2(nextPipe[1], STDOUT_FILENO) < 0) {
+				perror("Error de redirección");
+				_exit(1);
 			}
-			close(fd[0]);
-			close(fd[1]);
-			wait(NULL);
-			wait(NULL);
+			if(previousRead >= 0) close(previousRead);
+			if(nextPipe[0] >= 0) close(nextPipe[0]);
+			if(nextPipe[1] >= 0) close(nextPipe[1]);
+
+			execvp(pipes[stage][0], pipes[stage]);
+			perror("Error");
+			_exit(127);
+		}
+
+		pids[processCount++] = pid;
+		if(previousRead >= 0) close(previousRead);
+		if(nextPipe[1] >= 0) close(nextPipe[1]);
+		previousRead = nextPipe[0];
+	}
+
+	if(previousRead >= 0) close(previousRead);
+
+	for(int stage = 0; stage < processCount; stage++) {
+		char command[256] = "";
+		for(int arg = 0; pipes[stage][arg] != NULL; arg++) {
+			size_t used = strlen(command);
+			if(used < sizeof(command) - 1) {
+				snprintf(command + used, sizeof(command) - used, "%s%s", used ? " " : "", pipes[stage][arg]);
+			}
+		}
+
+		if(enBackground) {
+			agregaJob(pids[stage], command);
+		} else {
+			int status;
+			if(waitpid(pids[stage], &status, WUNTRACED) > 0 && WIFSTOPPED(status)) {
+				agregaJob(pids[stage], command);
+			}
 		}
 	}
 }
@@ -395,7 +485,7 @@ void parsearPipe(char *cmdUser[], int nLineas, char *pipes[100][100]){
 	pipes[++comando][0] = NULL;
 
 
-	execPipe(pipes, enBackground);
+	execPipe(pipes, enBackground, comando);
 	//comandoExterno(pipes[i], enBackground);
 }
 
